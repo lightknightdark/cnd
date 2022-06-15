@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CNN model imports</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>Food predictions demo:</h1>
+        <input type="file" id="avatar" name="avatar" accept="image/png, image/jpeg">
+        <img id="img" style="width:600px; height:auto; max-width: 600px; max-width: 600px;" />
+        <br /><br />
+        <div id="loadingDisplay"></div>
+
+        <div id="predictedLabel">
+            <h3> Predicted label: </h3>
+            <h3> Confidence: </h3>
+        </div>
+        <br /><br />
+        <div id="predictedLabelTopFive">
+        </div>
+
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+
+    <script>
+        /*
+          General flow:
+          1. Download your model.h5 to your pc
+          2. Download python tensorflowjs
+          -  pip install tensorflowjs (since we are using tensorflowjs_converter in local environment)
+          3. Using tensorflowjs_converter in your terminal
+          -  tensorflowjs_converter --input_format=keras --output_format=tfjs_graph_model <input_path> <output_path>
+          4. At that point, you will have a folder holding the model.json and other weights files
+          5. Open a repository in github (NOT gitlab, is github), git push your folder to that repository
+          6. Your jsdelivr link should be like this
+          -  https://cdn.jsdelivr.net/gh/<your username>/<your respo>/<your model folder>/model.json
+          7. Change the modelUrlPath, imgSize, labelMyModel by your own data
+          8. Done
+        
+        */
+
+        const img = document.getElementById('img'); // img box
+        const avatar = document.getElementById("avatar"); // input images elements
+
+        const loadingDisplay = document.getElementById("loadingDisplay"); // display spinner
+        const predictedLabel = document.getElementById("predictedLabel"); // display predicted text
+        const predictedLabelTopFive = document.getElementById("predictedLabelTopFive"); // display predicted text
+
+        let myModel;
+
+        ////////////////////////////////////////////////////////
+
+        // Depends on your model scale:
+        // [-1, 1]: divNum 127.5 subNum 1
+        // [0, 1]: divNum 255 subNum 0
+        // [255, 0]: divNum 1 subNum 0
+        const divNum = 1
+        const subNum = 0
+        const imgSize = 28
+        const modelUrlPath = 'https://cdn.jsdelivr.net/gh/lightknightdark/cnd/models/model.json'
+
+        const labelMyModel = [ 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+                'o', 'p', 'q', 'r', 's', 't', 'u',
+                'v', 'w', 'x', 'y', 'z'] 
+
+        ////////////////////////////////////////////////////////
+
+        window.onload = async () => {
+            await tf.ENV.set('WEBGL_PACK_DEPTHWISECONV', 'false');
+            loadModel();
+        }
+
+        async function loadModel() {
+            console.log("Loading Models");
+
+            const start = new Date();
+            myModel = await tf.loadGraphModel(modelUrlPath)
+
+            console.log("Time used to init: ", (new Date() - start) / 1000, " Done");
+
+        }
+
+        // do model predictions
+        async function useModel() {
+
+            loadingDisplay.innerHTML = `
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            `
+
+            await timer(200);
+
+            let start = new Date();
+
+            // Read img and reshape it
+            // https://stackoverflow.com/questions/54774073/incorrect-predictions-when-using-the-keras-pre-trained-inceptionv3-xception-mode
+            // normalizing the images into the range [-1, 1] before inputting them !!
+            let imgPre = await tf.browser.fromPixels(img)
+                .resizeNearestNeighbor([imgSize, imgSize])
+                .toFloat()
+                .div(tf.scalar(divNum))
+                .sub(tf.scalar(subNum))
+                .expandDims();
+
+            let afterResize = new Date();
+            console.log("Img resize & rescale time", (new Date() - start) / 1000)
+            console.log(imgPre);
+
+            // predict the inupt and output softmax prob
+            const p = await myModel.predict(imgPre).data();
+
+            // Get the biggest possibility value regarding that index
+            let ind = p.indexOf(Math.max(...p));
+            console.log(p);
+
+            console.log("MyModel predicted:", labelMyModel[ind]);
+
+            predictedLabel.innerHTML = `
+                <h3> Predicted label: ${labelMyModel[ind]} </h3>
+                <h3> Confidence: ${p[ind]* 100}% </h3>
+            `
+
+            console.log("Time used to predict: ", (new Date() - afterResize) / 1000);
+            console.log("Overall time: ", (new Date() - start) / 1000);
+            console.log("----------------------------");
+
+            loadingDisplay.innerHTML = ``;
+
+            // Extra: get top 5 predictions
+            // predict float array to int array
+
+            const topK = 5
+            const { values, indices } = tf.topk(p, topK);
+
+            values.print();
+            indices.print();
+
+            const topArrPoss = Array.from(values.dataSync()) // top K confident value
+            const topArr = Array.from(indices.dataSync()) // top K array index
+
+            predictedLabelTopFive.innerHTML = ``
+
+            let topFiveArr = [] // array to store top 5 label and confident
+            for (let i = 0; i < topK; i++) {
+                topFiveArr.push({ label: labelMyModel[topArr[i]], confident: topArrPoss[i] });
+                predictedLabelTopFive.innerHTML += `<h3> Top${i + 1}: Label : ${labelMyModel[topArr[i]]} ( Confident: ${topArrPoss[i] * 100}% )  </h3>`;
+            }
+
+            console.log(topFiveArr);
+
+        }
+
+        // load your image to display and fit into model for predictions
+        avatar.addEventListener("input", async (e) => {
+            let f = e.currentTarget;
+            const files = f.files[0]; // get files
+
+            if (files) {
+
+                const fileReader = new FileReader();
+                fileReader.readAsDataURL(files);
+
+                fileReader.addEventListener("load", async function () {
+
+                    img.src = this.result;
+                    await timer(200);
+                    useModel();
+
+                });
+
+            }
+
+        })
+
+        function timer(t) {
+            return new Promise((rec) => {
+                setTimeout(rec, t);
+            })
+        }
+
+    </script>
+
+</body>
+
+</html>

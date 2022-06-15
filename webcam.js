@@ -16,7 +16,7 @@ console.log("Height:", window.innerHeight)
 const stats = new Stats();
 
 const imgSize = 160
-const modelUrlPath = 'https://cdn.jsdelivr.net/lightknightdark/project/models/model.json'
+const modelUrlPath = 'https://cdn.jsdelivr.net/gh/lightknightdark/cnd/models/model.json'
 const [divNum , subNum] = [1,0] 
 
 
